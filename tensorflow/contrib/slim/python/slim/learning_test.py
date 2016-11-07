@@ -251,7 +251,7 @@ class CreateTrainOpTest(tf.test.TestCase):
 
       with tf.Session() as sess:
         # Initialize all variables
-        sess.run(tf.initialize_all_variables())
+        sess.run(tf.global_variables_initializer())
         mean, variance = sess.run([moving_mean, moving_variance])
         # After initialization moving_mean == 0 and moving_variance == 1.
         self.assertAllClose(mean, [0] * 4)
@@ -287,7 +287,7 @@ class CreateTrainOpTest(tf.test.TestCase):
 
       with tf.Session() as sess:
         # Initialize all variables
-        sess.run(tf.initialize_all_variables())
+        sess.run(tf.global_variables_initializer())
         mean, variance = sess.run([moving_mean, moving_variance])
         # After initialization moving_mean == 0 and moving_variance == 1.
         self.assertAllClose(mean, [0] * 4)
@@ -300,6 +300,22 @@ class CreateTrainOpTest(tf.test.TestCase):
         # Since we skip update_ops the moving_vars are not updated.
         self.assertAllClose(mean, [0] * 4)
         self.assertAllClose(variance, [1] * 4)
+
+  def testRecordTrainOpInCollection(self):
+    with tf.Graph().as_default():
+      tf.set_random_seed(0)
+      tf_inputs = tf.constant(self._inputs, dtype=tf.float32)
+      tf_labels = tf.constant(self._labels, dtype=tf.float32)
+
+      tf_predictions = LogisticClassifier(tf_inputs)
+      slim.losses.log_loss(tf_predictions, tf_labels)
+      total_loss = slim.losses.get_total_loss()
+
+      optimizer = tf.train.GradientDescentOptimizer(learning_rate=1.0)
+      train_op = slim.learning.create_train_op(total_loss, optimizer)
+
+      # Make sure the training op was recorded in the proper collection
+      self.assertTrue(train_op in tf.get_collection(tf.GraphKeys.TRAIN_OP))
 
 
 class TrainTest(tf.test.TestCase):
@@ -394,7 +410,7 @@ class TrainTest(tf.test.TestCase):
       tf_predictions = LogisticClassifier(tf_inputs)
       slim.losses.log_loss(tf_predictions, tf_labels)
       total_loss = slim.losses.get_total_loss()
-      tf.scalar_summary('total_loss', total_loss)
+      tf.summary.scalar('total_loss', total_loss)
 
       optimizer = tf.train.GradientDescentOptimizer(learning_rate=1.0)
 
@@ -421,12 +437,12 @@ class TrainTest(tf.test.TestCase):
       tf_predictions = LogisticClassifier(tf_inputs)
       slim.losses.log_loss(tf_predictions, tf_labels)
       total_loss = slim.losses.get_total_loss()
-      tf.scalar_summary('total_loss', total_loss)
+      tf.summary.scalar('total_loss', total_loss)
 
       optimizer = tf.train.GradientDescentOptimizer(learning_rate=1.0)
 
       train_op = slim.learning.create_train_op(total_loss, optimizer)
-      summary_op = tf.merge_all_summaries()
+      summary_op = tf.summary.merge_all()
 
       with self.assertRaises(ValueError):
         slim.learning.train(
@@ -610,7 +626,7 @@ class TrainTest(tf.test.TestCase):
       model_variables = tf.all_variables()
       model_path = os.path.join(logdir1, 'model.ckpt-300')
 
-      init_op = tf.initialize_all_variables()
+      init_op = tf.global_variables_initializer()
       op, init_feed_dict = slim.assign_from_checkpoint(
           model_path, model_variables)
 
@@ -748,7 +764,7 @@ class TrainTest(tf.test.TestCase):
 
       with tf.Session() as sess:
         # Initialize the variables.
-        sess.run(tf.initialize_all_variables())
+        sess.run(tf.global_variables_initializer())
 
         # Get the intial weights and biases values.
         weights_values, biases_values = sess.run([weights, biases])

@@ -253,6 +253,7 @@ import time
 
 from tensorflow.contrib.framework.python.ops import variables
 from tensorflow.core.protobuf import config_pb2
+from tensorflow.python import summary
 from tensorflow.python.client import timeline
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import errors
@@ -262,7 +263,6 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import clip_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import data_flow_ops
-from tensorflow.python.ops import logging_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import variables as tf_variables
 from tensorflow.python.platform import tf_logging as logging
@@ -360,10 +360,11 @@ def add_gradients_summaries(grads_and_vars):
         grad_values = grad.values
       else:
         grad_values = grad
-      summaries.append(logging_ops.histogram_summary(
-          var.op.name + ':gradient', grad_values))
-      summaries.append(logging_ops.histogram_summary(
-          var.op.name + ':gradient_norm', clip_ops.global_norm([grad_values])))
+      summaries.append(
+          summary.histogram(var.op.name + ':gradient', grad_values))
+      summaries.append(
+          summary.histogram(var.op.name + ':gradient_norm',
+                            clip_ops.global_norm([grad_values])))
     else:
       logging.info('Var %s has no gradient', var.op.name)
 
@@ -471,7 +472,14 @@ def create_train_op(
                                           'LossTensor is inf or nan')
 
     # Ensure the train_tensor computes grad_updates.
-    return control_flow_ops.with_dependencies([grad_updates], total_loss)
+    train_op = control_flow_ops.with_dependencies([grad_updates], total_loss)
+
+  # Add the operation used for training to the 'train_op' collection
+  train_ops = ops.get_collection_ref(ops.GraphKeys.TRAIN_OP)
+  if train_op not in train_ops:
+    train_ops.append(train_op)
+
+  return train_op
 
 
 def _wait_for_step(sess, global_step, step):
@@ -614,11 +622,11 @@ def train(train_op,
     number_of_steps: The max number of gradient steps to take during training.
       If the value is left as None, training proceeds indefinitely.
     init_op: The initialization operation. If left to its default value, then
-      the session is initialized by calling `tf.initialize_all_variables()`.
+      the session is initialized by calling `tf.global_variables_initializer()`.
     init_feed_dict: A feed dictionary to use when executing the `init_op`.
     local_init_op: The local initialization operation. If left to its default
       value, then the session is initialized by calling
-      `tf.initialize_local_variables()` and `tf.initialize_all_tables()`.
+      `tf.local_variables_initializer()` and `tf.initialize_all_tables()`.
     init_fn: An optional callable to be executed after `init_op` is called. The
       callable must accept one argument, the session being initialized.
     ready_op: Operation to check if the model is ready to use. If left to its
@@ -680,18 +688,18 @@ def train(train_op,
 
     with ops.name_scope('init_ops'):
       if init_op == _USE_DEFAULT:
-        init_op = tf_variables.initialize_all_variables()
+        init_op = tf_variables.global_variables_initializer()
 
       if ready_op == _USE_DEFAULT:
         ready_op = tf_variables.report_uninitialized_variables()
 
       if local_init_op == _USE_DEFAULT:
         local_init_op = control_flow_ops.group(
-            tf_variables.initialize_local_variables(),
+            tf_variables.local_variables_initializer(),
             data_flow_ops.initialize_all_tables())
 
     if summary_op == _USE_DEFAULT:
-      summary_op = logging_ops.merge_all_summaries()
+      summary_op = summary.merge_all()
 
     if summary_writer == _USE_DEFAULT:
       summary_writer = supervisor.Supervisor.USE_DEFAULT

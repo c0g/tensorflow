@@ -166,6 +166,32 @@ class FunctionTest(tf.test.TestCase):
       self.assertEqual(x.get_shape(), dx.get_shape())
       self.assertEqual(y.get_shape(), dy.get_shape())
 
+  def testSymGradAttr(self):
+    @function.Defun(noinline=True)
+    def Foo(x):
+      return x * 2
+
+    g = tf.Graph()
+    with g.as_default():
+      x = tf.constant(3.0)
+      y = Foo(x)
+      dx, = tf.gradients(y, [x])
+
+    self.assertTrue(y.op.node_def.attr["_noinline"].b)
+    self.assertTrue(dx.op.node_def.attr['f'].func.attr['_noinline'].b)
+
+    cfg = tf.ConfigProto(graph_options=tf.GraphOptions(
+        optimizer_options=tf.OptimizerOptions(
+            opt_level=tf.OptimizerOptions.L0,
+            do_common_subexpression_elimination=True,
+            do_function_inlining=True,
+            do_constant_folding=True)))
+
+    with self.test_session(graph=g, config=cfg):
+      self.assertAllClose(y.eval(), 6.)
+      self.assertAllClose(dx.eval(), 2.)
+
+
   def testZNoDepOnY(self):
 
     @function.Defun(tf.float32, tf.float32)
@@ -267,7 +293,7 @@ class FunctionTest(tf.test.TestCase):
       z = Foo(v)
 
     with self.test_session(graph=g):
-      tf.initialize_all_variables().run()
+      tf.global_variables_initializer().run()
       self.assertAllEqual(z.eval(), 101.)
 
   def testDefineErrors(self):
@@ -515,7 +541,7 @@ class FunctionTest(tf.test.TestCase):
       y = Foo(tf.constant([[10.]]))
 
     with self.test_session(graph=g):
-      tf.initialize_all_variables().run()
+      tf.global_variables_initializer().run()
       self.assertAllEqual(y.eval(), [[12.0]])
 
   def testCaptureControls(self):
@@ -621,7 +647,7 @@ class UnrollLSTMTest(tf.test.TestCase):
   def _BuildForward(self, weights, inp, mode="cell"):
 
     def Loop(cell, w, i):
-      x = tf.unpack(i, self.NUM_UNROLL)
+      x = tf.unstack(i, self.NUM_UNROLL)
       m = tf.zeros_like(x[0])
       c = tf.zeros_like(x[0])
       for i in range(self.NUM_UNROLL):
@@ -659,7 +685,7 @@ class UnrollLSTMTest(tf.test.TestCase):
 
       @function.Defun(tf.float32, tf.float32)
       def LSTMLoop10(weights, inp):
-        x = tf.unpack(inp, self.NUM_UNROLL)
+        x = tf.unstack(inp, self.NUM_UNROLL)
         m = tf.zeros_like(x[0])
         c = tf.zeros_like(x[0])
         assert self.NUM_UNROLL % 10 == 0
@@ -832,7 +858,7 @@ class VariableHoistingTest(tf.test.TestCase):
     self.assertEqual("Foo/b", b.op.name)
 
     with self.test_session(graph=g) as sess:
-      sess.run(tf.initialize_all_variables())
+      sess.run(tf.global_variables_initializer())
       w, b, x, y0, loss, dw, db = sess.run([w, b, x, y0, loss, dw, db])
 
     self.assertAllEqual(w.shape, (64, 64))

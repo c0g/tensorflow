@@ -76,13 +76,12 @@ import collections
 import math
 import six
 
-from tensorflow.contrib.framework.python.framework import deprecation
 from tensorflow.contrib.layers.python.layers import layers
 from tensorflow.contrib.layers.python.ops import bucketization_op
 from tensorflow.contrib.layers.python.ops import sparse_feature_cross_op
 from tensorflow.contrib.lookup import lookup_ops as contrib_lookup_ops
 from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import ops
+from tensorflow.python.framework import sparse_tensor as sparse_tensor_py
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
@@ -90,6 +89,7 @@ from tensorflow.python.ops import parsing_ops
 from tensorflow.python.ops import sparse_ops
 from tensorflow.python.ops import string_ops
 from tensorflow.python.platform import tf_logging as logging
+from tensorflow.python.util import deprecation
 
 
 class _LinearEmbeddingLookupArguments(
@@ -246,7 +246,7 @@ class _SparseColumn(_FeatureColumn,
     column_name: A string defining sparse column name.
     is_integerized: A bool if True means type of feature is an integer.
       Integerized means we can use the feature itself as id.
-    bucket_size: An int that is > 1. The number of buckets.
+    bucket_size: An int that is > 0. The number of buckets.
     lookup_config: A _SparseIdLookupConfig defining feature-to-id lookup
       configuration
     combiner: A string specifying how to reduce if the sparse column is
@@ -286,8 +286,8 @@ class _SparseColumn(_FeatureColumn,
       raise ValueError("one and only one of bucket_size or lookup_config "
                        "must be set. column_name: {}".format(column_name))
 
-    if bucket_size is not None and bucket_size < 2:
-      raise ValueError("bucket_size must be at least 2. "
+    if bucket_size is not None and bucket_size < 1:
+      raise ValueError("bucket_size must be at least 1. "
                        "bucket_size: {}, column_name: {}".format(bucket_size,
                                                                  column_name))
 
@@ -390,7 +390,7 @@ class _SparseColumnIntegerized(_SparseColumn):
     sparse_id_values = math_ops.mod(columns_to_tensors[self.name].values,
                                     self.bucket_size,
                                     name="mod")
-    columns_to_tensors[self] = ops.SparseTensor(
+    columns_to_tensors[self] = sparse_tensor_py.SparseTensor(
         columns_to_tensors[self.name].indices, sparse_id_values,
         columns_to_tensors[self.name].shape)
 
@@ -464,7 +464,7 @@ class _SparseColumnHashed(_SparseColumn):
 
     sparse_id_values = string_ops.string_to_hash_bucket_fast(
         sparse_values, self.bucket_size, name="lookup")
-    columns_to_tensors[self] = ops.SparseTensor(
+    columns_to_tensors[self] = sparse_tensor_py.SparseTensor(
         sparse_tensor.indices, sparse_id_values, sparse_tensor.shape)
 
 
@@ -1452,7 +1452,8 @@ class _BucketizedColumn(_FeatureColumn, collections.namedtuple(
 
     indices = math_ops.to_int64(array_ops.transpose(array_ops.pack((i1, i2))))
     shape = math_ops.to_int64(array_ops.pack([batch_size, dimension]))
-    sparse_id_values = ops.SparseTensor(indices, bucket_indices, shape)
+    sparse_id_values = sparse_tensor_py.SparseTensor(
+        indices, bucket_indices, shape)
 
     return sparse_id_values
 

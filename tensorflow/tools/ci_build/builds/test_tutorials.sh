@@ -198,13 +198,6 @@ test_cifar10_train() {
     return 1
   fi
 
-  # Check ckpt files
-  if [[ ! -f "${TUT_TEST_ROOT}/cifar10_train/model.ckpt-0" ]] ||
-    [[ ! -f "${TUT_TEST_ROOT}/cifar10_train/model.ckpt-49" ]]; then
-    echo "FAILED: cifar10_train did not generate expected model checkpoint files"
-    return 1
-  fi
-
   return 0
 }
 

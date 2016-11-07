@@ -15,7 +15,7 @@ limitations under the License.
 
 import {BoundingBox, CollisionGrid} from './label';
 import {RenderContext} from './renderContext';
-import {DataSet} from './scatterPlot';
+import {DataSet} from './data';
 import {ScatterPlotVisualizer} from './scatterPlotVisualizer';
 import {getProjectedPointFromIndex, vector3DToScreenCoords} from './util';
 
@@ -81,6 +81,7 @@ export class ScatterPlotVisualizerCanvasLabels implements
 
     this.gc.lineWidth = 6;
     this.gc.textBaseline = 'middle';
+    this.gc.miterLimit = 2;
 
     // Have extra space between neighboring labels. Don't pack too tightly.
     const labelMargin = 2;
@@ -134,8 +135,8 @@ export class ScatterPlotVisualizerCanvasLabels implements
     }
   }
 
-  onDataSet(dataSet: DataSet, spriteImage: HTMLImageElement) {
-    this.labelsActive = (spriteImage == null);
+  onDataSet(dataSet: DataSet) {
+    this.labelsActive = (dataSet.spriteAndMetadataInfo.spriteImage == null);
     this.dataSet = dataSet;
   }
 

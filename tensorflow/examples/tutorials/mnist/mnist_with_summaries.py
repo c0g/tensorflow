@@ -25,6 +25,7 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
+import sys
 
 import tensorflow as tf
 
@@ -139,7 +140,7 @@ def train():
   train_writer = tf.train.SummaryWriter(FLAGS.log_dir + '/train',
                                         sess.graph)
   test_writer = tf.train.SummaryWriter(FLAGS.log_dir + '/test')
-  tf.initialize_all_variables().run()
+  tf.global_variables_initializer().run()
 
   # Train the model, and also write summaries.
   # Every 10th step, measure test-set accuracy, and write test summaries
@@ -200,5 +201,5 @@ if __name__ == '__main__':
                       help='Directory for storing input data')
   parser.add_argument('--log_dir', type=str, default='/tmp/tensorflow/mnist/logs/mnist_with_summaries',
                       help='Summaries log directory')
-  FLAGS = parser.parse_args()
-  tf.app.run()
+  FLAGS, unparsed = parser.parse_known_args()
+  tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)

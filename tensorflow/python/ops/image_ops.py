@@ -152,7 +152,7 @@ type and representation (RGB or HSV).
 @@adjust_saturation
 @@random_saturation
 
-@@per_image_whitening
+@@per_image_standardization
 
 ## Working with Bounding Boxes
 
@@ -163,6 +163,8 @@ type and representation (RGB or HSV).
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+
+import os
 
 from tensorflow.python.framework import common_shapes
 from tensorflow.python.framework import constant_op
@@ -827,7 +829,7 @@ def resize_images(images,
   return images
 
 
-def per_image_whitening(image):
+def per_image_standardization(image):
   """Linearly scales `image` to have zero mean and unit norm.
 
   This op computes `(x - mean) / adjusted_stddev`, where `mean` is the average
@@ -837,16 +839,11 @@ def per_image_whitening(image):
   `stddev` is the standard deviation of all values in `image`. It is capped
   away from zero to protect against division by 0 when handling uniform images.
 
-  Note that this implementation is limited:
-
-  *  It only whitens based on the statistics of an individual image.
-  *  It does not take into account the covariance structure.
-
   Args:
     image: 3-D tensor of shape `[height, width, channels]`.
 
   Returns:
-    The whitened image with same shape as `image`.
+    The standardized image with same shape as `image`.
 
   Raises:
     ValueError: if the shape of 'image' is incompatible with this function.
@@ -871,6 +868,11 @@ def per_image_whitening(image):
   image = math_ops.sub(image, pixel_value_offset)
   image = math_ops.div(image, pixel_value_scale)
   return image
+
+
+# TODO(skye): remove once users switch to per_image_standardization()
+def per_image_whitening(image):
+  return per_image_standardization(image)
 
 
 def random_brightness(image, max_delta, seed=None):
@@ -1043,10 +1045,11 @@ def adjust_gamma(image, gamma=1, gain=1):
     adjusted_img = (img / scale) ** gamma * scale * gain
 
     return adjusted_img
-    
+
 
 ops.RegisterShape('AdjustContrast')(common_shapes.call_cpp_shape_fn)
 ops.RegisterShape('AdjustContrastv2')(common_shapes.call_cpp_shape_fn)
+ops.RegisterShape('AdjustHue')(common_shapes.call_cpp_shape_fn)
 ops.RegisterShape('DrawBoundingBoxes')(common_shapes.call_cpp_shape_fn)
 ops.RegisterShape('SampleDistortedBoundingBox')(common_shapes.call_cpp_shape_fn)
 
@@ -1265,18 +1268,26 @@ def adjust_hue(image, delta, name=None):
     orig_dtype = image.dtype
     flt_image = convert_image_dtype(image, dtypes.float32)
 
-    hsv = gen_image_ops.rgb_to_hsv(flt_image)
+    # TODO(zhengxq): we will switch to the fused version after we add a GPU
+    # kernel for that.
+    fused = os.environ.get('TF_ADJUST_HUE_FUSED', '')
+    fused = fused.lower() in ('true', 't', '1')
 
-    hue = array_ops.slice(hsv, [0, 0, 0], [-1, -1, 1])
-    saturation = array_ops.slice(hsv, [0, 0, 1], [-1, -1, 1])
-    value = array_ops.slice(hsv, [0, 0, 2], [-1, -1, 1])
+    if not fused:
+      hsv = gen_image_ops.rgb_to_hsv(flt_image)
 
-    # Note that we add 2*pi to guarantee that the resulting hue is a positive
-    # floating point number since delta is [-0.5, 0.5].
-    hue = math_ops.mod(hue + (delta + 1.), 1.)
+      hue = array_ops.slice(hsv, [0, 0, 0], [-1, -1, 1])
+      saturation = array_ops.slice(hsv, [0, 0, 1], [-1, -1, 1])
+      value = array_ops.slice(hsv, [0, 0, 2], [-1, -1, 1])
 
-    hsv_altered = array_ops.concat(2, [hue, saturation, value])
-    rgb_altered = gen_image_ops.hsv_to_rgb(hsv_altered)
+      # Note that we add 2*pi to guarantee that the resulting hue is a positive
+      # floating point number since delta is [-0.5, 0.5].
+      hue = math_ops.mod(hue + (delta + 1.), 1.)
+
+      hsv_altered = array_ops.concat(2, [hue, saturation, value])
+      rgb_altered = gen_image_ops.hsv_to_rgb(hsv_altered)
+    else:
+      rgb_altered = gen_image_ops.adjust_hue(flt_image, delta)
 
     return convert_image_dtype(rgb_altered, orig_dtype)
 
@@ -1380,3 +1391,6 @@ ops.RegisterShape('NonMaxSuppression')(common_shapes.call_cpp_shape_fn)
 __all__ = make_all(__name__)
 # ResizeMethod is not documented, but is documented in functions that use it.
 __all__.append('ResizeMethod')
+# TODO(skye): per_image_whitening() will be removed once all callers switch to
+# per_image_standardization()
+__all__.append('per_image_whitening')

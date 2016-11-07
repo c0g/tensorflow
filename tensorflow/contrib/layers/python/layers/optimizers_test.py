@@ -18,6 +18,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import tensorflow as tf
 
 
@@ -52,7 +53,7 @@ class OptimizersTest(tf.test.TestCase):
                                                   global_step,
                                                   learning_rate=0.1,
                                                   optimizer=optimizer)
-          tf.initialize_all_variables().run()
+          tf.global_variables_initializer().run()
           session.run(train, feed_dict={x: 5})
           var_value, global_step_value = session.run([var, global_step])
           self.assertEqual(var_value, 9.5)
@@ -68,7 +69,7 @@ class OptimizersTest(tf.test.TestCase):
                                                 global_step,
                                                 learning_rate=None,
                                                 optimizer=optimizer_fn)
-        tf.initialize_all_variables().run()
+        tf.global_variables_initializer().run()
         session.run(train, feed_dict={x: 5})
         var_value, global_step_value = session.run([var, global_step])
         self.assertEqual(var_value, 9.5)
@@ -142,7 +143,7 @@ class OptimizersTest(tf.test.TestCase):
                                               learning_rate=0.1,
                                               optimizer="SGD",
                                               gradient_noise_scale=10.0)
-      tf.initialize_all_variables().run()
+      tf.global_variables_initializer().run()
       session.run(train, feed_dict={x: 5})
       var_value, global_step_value = session.run([var, global_step])
       # Due to randomness the following number may change if graph is different.
@@ -159,7 +160,7 @@ class OptimizersTest(tf.test.TestCase):
                                               optimizer="SGD",
                                               gradient_noise_scale=10.0,
                                               clip_gradients=10.0)
-      tf.initialize_all_variables().run()
+      tf.global_variables_initializer().run()
       session.run(train, feed_dict={x: 5})
       var_value, global_step_value = session.run([var, global_step])
       self.assertAlmostEqual(var_value, 9.0, 4)
@@ -173,11 +174,31 @@ class OptimizersTest(tf.test.TestCase):
                                               learning_rate=0.1,
                                               optimizer="SGD",
                                               clip_gradients=0.1)
-      tf.initialize_all_variables().run()
+      tf.global_variables_initializer().run()
       session.run(train, feed_dict={x: 5})
       var_value, global_step_value = session.run([var, global_step])
       self.assertAlmostEqual(var_value, 9.98999, 4)
       self.assertEqual(global_step_value, 1)
+
+  def testAdaptiveGradientClip(self):
+    with self.test_session() as session:
+      x, var, loss, global_step = _setup_model()
+      clip_gradients = tf.contrib.layers.adaptive_clipping_fn()
+      train = tf.contrib.layers.optimize_loss(loss,
+                                              global_step,
+                                              learning_rate=0.1,
+                                              optimizer="SGD",
+                                              clip_gradients=clip_gradients)
+      tf.global_variables_initializer().run()
+      session.run(train, feed_dict={x: 5})
+      var_value, global_step_value = session.run([var, global_step])
+      self.assertAlmostEqual(var_value, 9.8916, 4)
+      self.assertEqual(global_step_value, 1)
+      var_count = 0
+      for var in tf.all_variables():
+        if var.name.startswith("OptimizeLoss/AdaptiveMaxNorm"):
+          var_count += 1
+      self.assertEqual(2, var_count)
 
   def testGradientMultiply(self):
     with self.test_session() as session:
@@ -187,7 +208,7 @@ class OptimizersTest(tf.test.TestCase):
                                               learning_rate=0.1,
                                               optimizer="SGD",
                                               gradient_multipliers={var: 7.})
-      tf.initialize_all_variables().run()
+      tf.global_variables_initializer().run()
       session.run(train, feed_dict={x: 5})
       var_value, global_step_value = session.run([var, global_step])
       # var(0) = 10, x = 5, var(0)/dx = 5,
@@ -223,7 +244,7 @@ class OptimizersTest(tf.test.TestCase):
                                                 learning_rate=0.1,
                                                 optimizer=optimizer,
                                                 update_ops=[update_op])
-        tf.initialize_all_variables().run()
+        tf.global_variables_initializer().run()
         session.run(train, feed_dict={x: 5})
         self.assertEqual(9.5, var.eval())
         self.assertEqual(20, update_var.eval())
@@ -264,7 +285,7 @@ class OptimizersTest(tf.test.TestCase):
                                                 learning_rate=0.1,
                                                 optimizer=optimizer,
                                                 update_ops=[update_op])
-        tf.initialize_all_variables().run()
+        tf.global_variables_initializer().run()
         session.run(train, feed_dict={x: 5})
         self.assertEqual(9.5, var.eval())
         self.assertEqual(20, update_var.eval())
@@ -284,7 +305,7 @@ class OptimizersTest(tf.test.TestCase):
                                                 learning_rate=0.1,
                                                 optimizer=optimizer,
                                                 update_ops=[update_op])
-        tf.initialize_all_variables().run()
+        tf.global_variables_initializer().run()
         session.run(train, feed_dict={x: 5})
         self.assertEqual(9.5, var.eval())
         self.assertEqual(20, update_var.eval())
@@ -306,7 +327,7 @@ class OptimizersTest(tf.test.TestCase):
             learning_rate_decay_fn=_no_op_learning_rate_decay_fn,
             optimizer=optimizer,
             update_ops=[update_op])
-        tf.initialize_all_variables().run()
+        tf.global_variables_initializer().run()
         session.run(train, feed_dict={x: 5})
         self.assertEqual(9.5, var.eval())
         self.assertEqual(20, update_var.eval())
@@ -324,13 +345,78 @@ class OptimizersTest(tf.test.TestCase):
         tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_op)
         train = tf.contrib.layers.optimize_loss(
             loss, global_step, learning_rate=0.1, optimizer=optimizer)
-        tf.initialize_all_variables().run()
+        tf.global_variables_initializer().run()
         session.run(train, feed_dict={x: 5})
         var_value, update_var_value, global_step_value = session.run(
             [var, update_var, global_step])
         self.assertEqual(var_value, 9.5)
         self.assertEqual(update_var_value, 20)
         self.assertEqual(global_step_value, 1)
+
+
+class AdaptiveClipping(tf.test.TestCase):
+
+  def testAverages(self):
+    with self.test_session() as session:
+      scale = 2.
+      grad = tf.ones([3, 4]) * scale
+      log_norm = np.log(np.sqrt(scale**2 * grad.get_shape().num_elements()))
+      grads_and_vars = [(grad, grad)]
+      grads_and_vars = tf.contrib.layers.adaptive_clipping_fn(
+          decay=0.5)(grads_and_vars)
+
+      var_dict = {}
+      for var in tf.all_variables():
+        if var.name.startswith("AdaptiveMaxNorm"):
+          var_dict[var.name.split(":")[0]] = var
+      self.assertEqual(2, len(var_dict))
+      moving_mean = var_dict["AdaptiveMaxNorm/mean"]
+      moving_sq_mean = var_dict["AdaptiveMaxNorm/sq_mean"]
+      tf.global_variables_initializer().run()
+      mean, sq_mean = session.run([moving_mean, moving_sq_mean])
+      self.assertEqual([0], mean)
+      self.assertEqual([0], sq_mean)
+      for i in range(20):
+        mean, sq_mean, _ = session.run(
+            [moving_mean, moving_sq_mean, grads_and_vars[0][0]])
+        if i == 0:
+          self.assertLess(mean, 0.9 * log_norm)
+          self.assertLess(sq_mean, 0.9 * log_norm**2)
+
+      self.assertAlmostEqual(float(mean), log_norm, places=4)
+      self.assertAlmostEqual(float(sq_mean), log_norm**2, places=4)
+
+  def testClip(self):
+    with self.test_session() as session:
+      spike = 1000.
+      multiplier = tf.placeholder(tf.float32, [], "multiplier")
+      step = tf.placeholder(tf.int32, [], "step")
+
+      grad = tf.ones([3, 4]) * multiplier
+      grads_and_vars = [(grad, grad)]
+      grads_and_vars = tf.contrib.layers.adaptive_clipping_fn(
+          decay=0.9, global_step=step)(grads_and_vars)
+
+      tf.global_variables_initializer().run()
+      def run(scale, i):
+        return session.run(grads_and_vars[0][0],
+                           feed_dict={multiplier: scale, step: i})
+
+      for i in range(20):
+        scale = [1., -2.][i % 2]
+        clipped_grad = run(scale, i)
+        if i > 3:
+          self.assertAllClose(np.ones(clipped_grad.shape)*scale, clipped_grad)
+
+      # assert that the spike will have low influence.
+      clipped_grad = run(spike, 20)
+      self.assertTrue((clipped_grad < 25.).all())
+
+      # assert that a repeated spike will converge to this new value.
+      for i in range(10):
+        clipped_grad = run(spike, i + 21)
+
+      self.assertAllClose(np.ones(clipped_grad.shape)*spike, clipped_grad)
 
 if __name__ == "__main__":
   tf.test.main()
